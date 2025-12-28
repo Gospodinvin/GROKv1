@@ -36,7 +36,7 @@ async def market_callback(cb: CallbackQuery):
         await cb.message.edit_text(text, reply_markup=keyboard)
         await cb.answer()
 
-# Обработка выбора тикера и кнопки "Назад"
+# Обработка выбора тикера, кнопки "Назад" и режима по фото
 async def ticker_callback(cb: CallbackQuery):
     if cb.data.startswith("ticker:"):
         symbol = cb.data.split(":")[1]
@@ -47,7 +47,7 @@ async def ticker_callback(cb: CallbackQuery):
             reply_markup=timeframe_keyboard()
         )
         await cb.answer()
-    elif cb.data.startswith("back:"):  # Исправлено: проверка на префикс
+    elif cb.data == "back:markets":  # точное совпадение, а не префикс
         await cb.message.edit_text(
             "Выберите рынок для анализа:",
             reply_markup=market_keyboard()
@@ -117,10 +117,10 @@ def main():
     
     # Обработчики callback
     dp.callback_query.register(market_callback, F.data.startswith("market:"))
-    dp.callback_query.register(ticker_callback, F.data.startswith("ticker:") | F.data.startswith("back:") | F.data == "mode:image")
+    dp.callback_query.register(ticker_callback, F.data.startswith("ticker:") | F.data == "back:markets" | F.data == "mode:image")
     dp.callback_query.register(tf_callback, F.data.startswith("tf:"))
 
-    print("Бот запущен с исправлением кнопки 'Назад'!")
+    print("Бот запущен с исправлениями!")
     dp.run_polling(bot)
 
 if __name__ == "__main__":
