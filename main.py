@@ -47,7 +47,7 @@ async def ticker_callback(cb: CallbackQuery):
             reply_markup=timeframe_keyboard()
         )
         await cb.answer()
-    elif cb.data == "back:markets":  # точное совпадение, а не префикс
+    elif cb.data == "back:markets":
         await cb.message.edit_text(
             "Выберите рынок для анализа:",
             reply_markup=market_keyboard()
@@ -117,7 +117,7 @@ def main():
     
     # Обработчики callback
     dp.callback_query.register(market_callback, F.data.startswith("market:"))
-    dp.callback_query.register(ticker_callback, F.data.startswith("ticker:") | F.data == "back:markets" | F.data == "mode:image")
+    dp.callback_query.register(ticker_callback, (F.data.startswith("ticker:") | (F.data == "back:markets")) | (F.data == "mode:image"))
     dp.callback_query.register(tf_callback, F.data.startswith("tf:"))
 
     print("Бот запущен с исправлениями!")
