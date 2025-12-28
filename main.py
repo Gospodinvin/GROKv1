@@ -27,7 +27,6 @@ async def image_handler(m: Message):
     await state.set(m.from_user.id, "mode", "image")
     await m.answer("Выберите таймфрейм:", reply_markup=timeframe_keyboard())
 
-# Обработка выбора рынка (Forex, Crypto и т.д.)
 async def market_callback(cb: CallbackQuery):
     if cb.data.startswith("market:"):
         market = cb.data.split(":")[1]
@@ -36,7 +35,6 @@ async def market_callback(cb: CallbackQuery):
         await cb.message.edit_text(text, reply_markup=keyboard)
         await cb.answer()
 
-# Обработка выбора тикера, кнопки "Назад" и режима по фото
 async def ticker_callback(cb: CallbackQuery):
     if cb.data.startswith("ticker:"):
         symbol = cb.data.split(":")[1]
@@ -59,23 +57,23 @@ async def ticker_callback(cb: CallbackQuery):
         )
         await cb.answer()
 
-# Обработка выбора таймфрейма
 async def tf_callback(cb: CallbackQuery):
     tf = cb.data.split(":")[1]
     mode = await state.get(cb.from_user.id, "mode")
+    symbol = await state.get(cb.from_user.id, "symbol")  # берём тикер из состояния
+    img = await state.get(cb.from_user.id, "data")
 
     res = None
     err = None
 
     if mode == "image":
-        img = await state.get(cb.from_user.id, "data")
         if img:
             res, err = analyze(image_bytes=img, tf=tf)
         else:
             err = "Скриншот не найден. Пришлите новый."
     elif mode == "api":
-        symbol = await state.get(cb.from_user.id, "symbol")
         if symbol:
+            # ←←← ВОТ ГЛАВНОЕ ИСПРАВЛЕНИЕ! Передаём symbol в analyze
             res, err = analyze(tf=tf, symbol=symbol)
         else:
             err = "Тикер не выбран."
@@ -115,7 +113,6 @@ def main():
     dp.message.register(start, CommandStart())
     dp.message.register(image_handler, F.content_type.in_({ContentType.PHOTO, ContentType.DOCUMENT}))
     
-    # Обработчики callback
     dp.callback_query.register(market_callback, F.data.startswith("market:"))
     dp.callback_query.register(ticker_callback, (F.data.startswith("ticker:") | (F.data == "back:markets")) | (F.data == "mode:image"))
     dp.callback_query.register(tf_callback, F.data.startswith("tf:"))
