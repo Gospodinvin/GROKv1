@@ -21,11 +21,15 @@ def analyze(image_bytes=None, tf=None, symbol=None):
     if symbol:
         client = get_client()
         if not client:
-            return None, "Twelve Data API ключ не настроен. Используйте скриншот."
+            return None, "Twelve Data API не настроен (ключ не найден). Используйте скриншот."
         
-        candles = client.get_candles(symbol.upper(), f"{tf}min", 60)
+        try:
+            candles = client.get_candles(symbol.upper(), f"{tf}min", 60)
+        except Exception as e:
+            return None, f"Ошибка API: {str(e)}. Попробуйте позже или используйте скриншот."
+        
         if not candles or len(candles) < 12:
-            return None, f"Не удалось получить данные для {symbol} ({tf}m). Проверьте тикер или подключение."
+            return None, f"Данные для {symbol} ({tf}m) недоступны или недостаточно свечей ({len(candles) if candles else 0}). Проверьте тикер или подключение."
         source = "Twelve Data API"
 
     # Режим скриншота
