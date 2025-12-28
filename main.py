@@ -7,7 +7,7 @@ from config import TELEGRAM_BOT_TOKEN, STATE_TTL_SECONDS
 from keyboards import market_keyboard, tickers_keyboard, timeframe_keyboard
 from state import TTLState
 from predictor import analyze
-import re
+import logging
 
 state = TTLState(STATE_TTL_SECONDS)
 
@@ -27,6 +27,7 @@ async def image_handler(m: Message):
     await state.set(m.from_user.id, "mode", "image")
     await m.answer("Выберите таймфрейм:", reply_markup=timeframe_keyboard())
 
+# Обработка выбора рынка (Forex, Crypto, Metals, Stocks)
 async def market_callback(cb: CallbackQuery):
     if cb.data.startswith("market:"):
         market = cb.data.split(":")[1]
@@ -35,33 +36,44 @@ async def market_callback(cb: CallbackQuery):
         await cb.message.edit_text(text, reply_markup=keyboard)
         await cb.answer()
 
-async def ticker_callback(cb: CallbackQuery):
-    if cb.data.startswith("ticker:"):
-        symbol = cb.data.split(":")[1]
+# Обработка выбора тикера, кнопки "Назад" и режима по скриншоту
+async def ticker_or_back_callback(cb: CallbackQuery):
+    data = cb.data
+
+    if data.startswith("ticker:"):
+        symbol = data.split(":")[1]
+        logging.info(f"Пользователь {cb.from_user.id} выбрал тикер: {symbol}")
         await state.set(cb.from_user.id, "symbol", symbol)
         await state.set(cb.from_user.id, "mode", "api")
         await cb.message.edit_text(
             f"✅ Выбран тикер: {symbol}\n\nВыберите таймфрейм:",
             reply_markup=timeframe_keyboard()
         )
-        await cb.answer()
-    elif cb.data == "back:markets":
+        await cb.answer("Тикер сохранён!")
+
+    elif data == "back:markets":
         await cb.message.edit_text(
             "Выберите рынок для анализа:",
             reply_markup=market_keyboard()
         )
         await cb.answer()
-    elif cb.data == "mode:image":
+
+    elif data == "mode:image":
         await cb.message.edit_text(
             "📸 Пришлите скриншот графика для анализа.\nПосле отправки выберите таймфрейм."
         )
         await cb.answer()
 
+# Обработка выбора таймфрейма
 async def tf_callback(cb: CallbackQuery):
     tf = cb.data.split(":")[1]
-    mode = await state.get(cb.from_user.id, "mode")
-    symbol = await state.get(cb.from_user.id, "symbol")  # берём тикер из состояния
-    img = await state.get(cb.from_user.id, "data")
+    user_id = cb.from_user.id
+
+    mode = await state.get(user_id, "mode")
+    symbol = await state.get(user_id, "symbol")
+    img = await state.get(user_id, "data")
+
+    logging.info(f"TF выбран: {tf}, mode={mode}, symbol={symbol}")
 
     res = None
     err = None
@@ -73,10 +85,9 @@ async def tf_callback(cb: CallbackQuery):
             err = "Скриншот не найден. Пришлите новый."
     elif mode == "api":
         if symbol:
-            # ←←← ВОТ ГЛАВНОЕ ИСПРАВЛЕНИЕ! Передаём symbol в analyze
             res, err = analyze(tf=tf, symbol=symbol)
         else:
-            err = "Тикер не выбран."
+            err = "Тикер не выбран. Начните заново."
     else:
         err = "Режим не определён. Начните заново с /start"
 
@@ -86,7 +97,7 @@ async def tf_callback(cb: CallbackQuery):
         await send_result(cb.message, res)
         await cb.message.answer("Хотите проанализировать другой тикер?", reply_markup=market_keyboard())
 
-    await state.clear(cb.from_user.id)
+    await state.clear(user_id)
     await cb.answer()
 
 async def send_result(message: Message, res: dict):
@@ -100,7 +111,7 @@ async def send_result(message: Message, res: dict):
         f"Источник: {res['source']}\n"
     )
     if res.get("quality", 1.0) < 1.0:
-        txt += f"Качество скрина: {res['quality']}\n"
+        txt += f"Качество скрина: {res['quality']:.2f}\n"
     if res["patterns"]:
         txt += "Паттерны: " + ", ".join(res["patterns"]) + "\n"
     txt += "\n⚠ Не является финансовой рекомендацией"
@@ -112,12 +123,15 @@ def main():
 
     dp.message.register(start, CommandStart())
     dp.message.register(image_handler, F.content_type.in_({ContentType.PHOTO, ContentType.DOCUMENT}))
-    
+
+    # Раздельные обработчики — самый надёжный способ
     dp.callback_query.register(market_callback, F.data.startswith("market:"))
-    dp.callback_query.register(ticker_callback, (F.data.startswith("ticker:") | (F.data == "back:markets")) | (F.data == "mode:image"))
+    dp.callback_query.register(ticker_or_back_callback, F.data.startswith("ticker:"))
+    dp.callback_query.register(ticker_or_back_callback, F.data == "back:markets")
+    dp.callback_query.register(ticker_or_back_callback, F.data == "mode:image")
     dp.callback_query.register(tf_callback, F.data.startswith("tf:"))
 
-    print("Бот запущен с исправлениями!")
+    print("Бот запущен — все callback обработчики зарегистрированы раздельно!")
     dp.run_polling(bot)
 
 if __name__ == "__main__":
