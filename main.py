@@ -4,7 +4,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
 from aiogram.enums import ContentType
 from config import TELEGRAM_BOT_TOKEN, STATE_TTL_SECONDS
-from keyboards import timeframe_keyboard
+from keyboards import ticker_keyboard, timeframe_keyboard
 from state import TTLState
 from predictor import analyze
 import re
@@ -13,10 +13,9 @@ state = TTLState(STATE_TTL_SECONDS)
 
 async def start(m: Message):
     await m.answer(
-        "🤖 Анализатор свечных графиков\n\n"
-        "Варианты использования:\n"
-        "📸 Пришли скриншот графика → выбери таймфрейм\n"
-        "💹 Напиши тикер + TF (например: BTCUSD 5m или eurusd 1m)"
+        "🤖 Боттрейд — анализ свечных графиков\n\n"
+        "Выберите, как хотите анализировать рынок:",
+        reply_markup=ticker_keyboard()
     )
 
 async def image_handler(m: Message):
@@ -26,42 +25,56 @@ async def image_handler(m: Message):
     await m.bot.download_file(file.file_path, bio)
     await state.set(m.from_user.id, "data", bio.getvalue())
     await state.set(m.from_user.id, "mode", "image")
-    await m.answer("Выбери таймфрейм:", reply_markup=timeframe_keyboard())
+    await m.answer("Выберите таймфрейм:", reply_markup=timeframe_keyboard())
 
-async def text_handler(m: Message):
-    text = m.text.strip().upper()
-    match = re.match(r"([A-Z]{3,12})\s*(\d+)?\s*(M|MIN)?", text)
-    if match:
-        symbol = match.group(1)
-        tf = match.group(2)
-        if tf not in ["1", "2", "5", "10"]:
-            await m.answer("Поддерживаемые TF: 1, 2, 5, 10 минут")
-            return
-        res, err = analyze(tf=tf, symbol=symbol)
-        if err:
-            await m.answer(f"❌ {err}")
-        else:
-            await send_result(m, res)
-    else:
-        await m.answer("Формат: ТИКЕР TF (например: BTCUSD 5)")
+# Обработка выбора тикера
+async def ticker_callback(cb: CallbackQuery):
+    data = cb.data
+    if data.startswith("ticker:"):
+        symbol = data.split(":")[1]
+        await state.set(cb.from_user.id, "symbol", symbol)
+        await state.set(cb.from_user.id, "mode", "api")
+        await cb.message.edit_text(
+            f"✅ Выбран тикер: {symbol}\n\nТеперь выберите таймфрейм:",
+            reply_markup=timeframe_keyboard()
+        )
+    elif data == "mode:image":
+        await cb.message.edit_text(
+            "📸 Пришлите скриншот графика, и я проанализирую его.\n"
+            "После отправки выберите таймфрейм."
+        )
+    await cb.answer()
 
+# Обработка выбора таймфрейма
 async def tf_callback(cb: CallbackQuery):
     tf = cb.data.split(":")[1]
     mode = await state.get(cb.from_user.id, "mode")
 
+    res = None
+    err = None
+
     if mode == "image":
         img = await state.get(cb.from_user.id, "data")
-        res, err = analyze(image_bytes=img, tf=tf)
+        if img:
+            res, err = analyze(image_bytes=img, tf=tf)
+        else:
+            err = "Скриншот не найден. Пришлите новый."
+    elif mode == "api":
+        symbol = await state.get(cb.from_user.id, "symbol")
+        if symbol:
+            res, err = analyze(tf=tf, symbol=symbol)
+        else:
+            err = "Тикер не выбран."
     else:
-        # Если режим не image — возможно, был тикер, но состояние устарело
-        await cb.message.answer("Сессия истекла. Пришли новый скрин или тикер.")
-        await cb.answer()
-        return
+        err = "Режим не определён. Начните заново с /start"
 
     if err:
-        await cb.message.answer(f"❌ {err}")
+        await cb.message.answer(f"❌ {err}\n\nНачните заново:", reply_markup=ticker_keyboard())
     else:
         await send_result(cb.message, res)
+        # Предлагаем продолжить
+        await cb.message.answer("Хотите проанализировать другой тикер?", reply_markup=ticker_keyboard())
+
     await state.clear(cb.from_user.id)
     await cb.answer()
 
@@ -77,7 +90,7 @@ async def send_result(message: Message, res: dict):
         txt += f"Качество скрина: {res['quality']}\n"
     if res["patterns"]:
         txt += "Паттерны: " + ", ".join(res["patterns"]) + "\n"
-    txt += "\n⚠ Не финансовая рекомендация. Торгуйте осознанно."
+    txt += "\n⚠ Не является финансовой рекомендацией"
     await message.answer(txt)
 
 def main():
@@ -86,10 +99,12 @@ def main():
 
     dp.message.register(start, CommandStart())
     dp.message.register(image_handler, F.content_type.in_({ContentType.PHOTO, ContentType.DOCUMENT}))
-    dp.message.register(text_handler, F.text)  # Обрабатывает тикеры
+    
+    # Новые обработчики
+    dp.callback_query.register(ticker_callback, F.data.startswith("ticker:") | F.data == "mode:image")
     dp.callback_query.register(tf_callback, F.data.startswith("tf:"))
 
-    print("Бот запущен...")
+    print("Бот запущен с кнопками!")
     dp.run_polling(bot)
 
 if __name__ == "__main__":
