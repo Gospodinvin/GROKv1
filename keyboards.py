@@ -29,6 +29,7 @@ def get_current_session():
     else:
         return "closed", "🌙 Рынок спит (выходные или ночь)"
 
+
 def market_keyboard():
     buttons = [
         [
@@ -45,14 +46,23 @@ def market_keyboard():
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
+
 def tickers_keyboard(market: str):
     session_key, session_text = get_current_session()
     
-    if market == "crypto" or session_key == "closed":
-        tickers = MARKET_CATEGORIES.get(market, [])
-        session_text = "🪙 Крипта работает 24/7" if market == "crypto" else session_text
+    # Для крипты и металлов/акций — нет разделения по сессиям, берём весь список напрямую
+    if market == "crypto":
+        tickers = MARKET_CATEGORIES["crypto"]
+        session_text = "🪙 Крипта работает 24/7"
+    elif market in ["metals", "stocks"]:
+        tickers = MARKET_CATEGORIES[market]
+        session_text = session_text  # оставляем текущую сессию как информацию
+    elif session_key == "closed":
+        tickers = []  # на выходных forex не показываем ничего или можно показать все
+        session_text = "🌙 Рынок спит — Forex недоступен"
     else:
-        tickers = MARKET_CATEGORIES.get(market, {}).get(session_key, [])
+        # Для forex — выбираем по текущей сессии
+        tickers = MARKET_CATEGORIES.get("forex", {}).get(session_key, [])
     
     buttons = []
     row = []
@@ -68,6 +78,7 @@ def tickers_keyboard(market: str):
     
     info = f"Текущая сессия: {session_text}\nРекомендуемые пары для {market.upper()}:\n\nВыберите тикер:"
     return InlineKeyboardMarkup(inline_keyboard=buttons), info
+
 
 def timeframe_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
