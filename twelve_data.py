@@ -1,6 +1,7 @@
 import requests
 import logging
 from typing import List, Dict, Optional
+from config import TWELVE_DATA_API_KEY
 
 class TwelveDataClient:
     def __init__(self, api_key: str):
@@ -40,14 +41,14 @@ class TwelveDataClient:
                 })
             
             # Нормализуем цены (делим на max для совместимости с CV)
-            max_price = max(c["high"] for c in candles)
+            max_price = max(c["high"] for c in candles) if candles else 1.0
             for candle in candles:
                 candle["open"] /= max_price
                 candle["high"] /= max_price
                 candle["low"] /= max_price
                 candle["close"] /= max_price
             
-            return candles[::-1]  # последние в начале
+            return candles[::-1]  # последние в конце
             
         except Exception as e:
             logging.error(f"Twelve Data API error: {e}")
@@ -58,6 +59,10 @@ client = None
 
 def get_client() -> Optional[TwelveDataClient]:
     global client
-    if client is None and TWELVE_DATA_API_KEY:
-        client = TwelveDataClient(TWELVE_DATA_API_KEY)
-    return client
+    if client is None and TWELVE_DATA_API_KEY is not None:
+        try:
+            client = TwelveDataClient(TWELVE_DATA_API_KEY)
+        except Exception as e:
+            logging.error(f"Failed to create TwelveDataClient: {e}")
+            client = "error"  # Чтобы не пытаться снова
+    return client if client != "error" else None
