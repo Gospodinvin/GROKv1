@@ -9,7 +9,7 @@ import numpy as np
 
 def analyze(image_bytes, tf):
     candles, quality = extract_candles(image_bytes)
-    if quality < MIN_QUALITY_SCORE:
+    if quality < MIN_QUALITY_SCORE and len(candles) < 10:  # Fallback: если свечей много, игнорируем низкий score
         return None, "Низкое качество скрина"
 
     if len(candles) < 12:
