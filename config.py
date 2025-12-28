@@ -9,6 +9,5 @@ logging.basicConfig(
 )
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TWELVE_DATA_API_KEY = os.getenv("TWELVE_DATA_API_KEY")  # Новый
 STATE_TTL_SECONDS = 15 * 60
-# Убрали жёсткий MIN_QUALITY_SCORE — теперь логика в extractor и predictor
-
