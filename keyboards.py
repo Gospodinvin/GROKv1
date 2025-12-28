@@ -1,12 +1,17 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 import datetime
 
-# Рекомендуемые тикеры по сессиям (расширенный список)
-SESSION_TICKERS = {
-    "asian": ["AUDUSD", "NZDUSD", "USDJPY", "AUDJPY", "USDCNH", "EURJPY", "GBPAUD", "CHFJPY", "AUDNZD", "NZDJPY"],
-    "london": ["EURUSD", "GBPUSD", "EURGBP", "EURJPY", "GBPJPY", "USDCHF", "EURCAD", "GBPCAD", "EURCHF", "GBPCHF"],
-    "newyork": ["EURUSD", "GBPUSD", "USDCAD", "XAUUSD", "US30", "USDJPY", "AUDCAD", "SPX500", "XAGUSD", "USOIL"],
-    "overlap": ["EURUSD", "GBPUSD", "XAUUSD", "USDCAD", "USDJPY", "EURCHF", "GBPCHF", "XAGUSD", "GBPJPY", "EURJPY"]  # Лондон+НЙ
+# Категории рынков
+MARKET_CATEGORIES = {
+    "forex": {
+        "asian": ["AUDUSD", "NZDUSD", "USDJPY", "AUDJPY", "USDCNH", "EURJPY", "GBPAUD", "CHFJPY", "AUDNZD", "NZDJPY"],
+        "london": ["EURUSD", "GBPUSD", "EURGBP", "EURJPY", "GBPJPY", "USDCHF", "EURCAD", "GBPCAD", "EURCHF", "GBPCHF"],
+        "newyork": ["EURUSD", "GBPUSD", "USDCAD", "USDJPY", "AUDCAD", "EURCHF", "GBPCHF", "GBPJPY", "EURJPY"],
+        "overlap": ["EURUSD", "GBPUSD", "USDCAD", "USDJPY", "EURCHF", "GBPCHF", "GBPJPY", "EURJPY", "USDCHF", "EURCAD"],
+    },
+    "crypto": ["BTCUSD", "ETHUSD", "BNBUSD", "SOLUSD", "XRPUSD", "ADAUSD", "DOGEUSD", "AVAXUSD", "DOTUSD", "LTCUSD"],  # 24/7, без сессий
+    "metals": ["XAUUSD", "XAGUSD", "XPTUSD", "XPDUSD", "HGUSD", "SIUSD", "PAUSD", "PLUSD", "ALUSD", "ZNUSD"],
+    "stocks": ["AAPL", "TSLA", "GOOGL", "MSFT", "AMZN", "NVDA", "META", "NFLX", "INTC", "AMD"],  # Индексы/акции
 }
 
 def get_current_session():
@@ -24,30 +29,45 @@ def get_current_session():
     else:
         return "closed", "🌙 Рынок спит (выходные или ночь)"
 
-def session_keyboard():
+def market_keyboard():
+    buttons = [
+        [
+            InlineKeyboardButton(text="💱 Forex", callback_data="market:forex"),
+            InlineKeyboardButton(text="🪙 Crypto (24/7)", callback_data="market:crypto"),
+        ],
+        [
+            InlineKeyboardButton(text="🛡️ Metals", callback_data="market:metals"),
+            InlineKeyboardButton(text="📈 Stocks", callback_data="market:stocks"),
+        ],
+        [
+            InlineKeyboardButton(text="📸 Анализ по скриншоту", callback_data="mode:image"),
+        ]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def tickers_keyboard(market: str):
     session_key, session_text = get_current_session()
     
-    if session_key == "closed":
-        keyboard = [[InlineKeyboardButton(text="📸 Анализ по скриншоту", callback_data="mode:image")]]
-        info = f"Текущая сессия: {session_text}\n\nВыберите режим:"
+    if market == "crypto" or session_key == "closed":
+        tickers = MARKET_CATEGORIES.get(market, [])
+        session_text = "🪙 Крипта работает 24/7" if market == "crypto" else session_text
     else:
-        tickers = SESSION_TICKERS.get(session_key, SESSION_TICKERS["newyork"])
-        buttons = []
-        row = []
-        for t in tickers:
-            row.append(InlineKeyboardButton(text=t, callback_data=f"ticker:{t}"))
-            if len(row) == 3:  # 3 столбца для удобства
-                buttons.append(row)
-                row = []
-        if row:
-            buttons.append(row)
-        
-        buttons.append([InlineKeyboardButton(text="📸 Анализ по скриншоту", callback_data="mode:image")])
-        
-        keyboard = buttons
-        info = f"Текущая сессия: {session_text}\nРекомендуемые пары:\n\nВыберите тикер:"
+        tickers = MARKET_CATEGORIES.get(market, {}).get(session_key, [])
     
-    return InlineKeyboardMarkup(inline_keyboard=keyboard), info
+    buttons = []
+    row = []
+    for t in tickers:
+        row.append(InlineKeyboardButton(text=t, callback_data=f"ticker:{t}"))
+        if len(row) == 3:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    
+    buttons.append([InlineKeyboardButton(text="🔙 Назад к рынкам", callback_data="back:markets")])
+    
+    info = f"Текущая сессия: {session_text}\nРекомендуемые пары для {market.upper()}:\n\nВыберите тикер:"
+    return InlineKeyboardMarkup(inline_keyboard=buttons), info
 
 def timeframe_keyboard():
     return InlineKeyboardMarkup(inline_keyboard=[
