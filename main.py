@@ -27,14 +27,16 @@ async def image_handler(m: Message):
     await state.set(m.from_user.id, "mode", "image")
     await m.answer("Выберите таймфрейм:", reply_markup=timeframe_keyboard())
 
+# Обработка выбора рынка (Forex, Crypto и т.д.)
 async def market_callback(cb: CallbackQuery):
-    market = cb.data.split(":")[1]
-    await state.set(cb.from_user.id, "market", market)
-    keyboard, text = tickers_keyboard(market)
-    await cb.message.edit_text(text, reply_markup=keyboard)
-    await cb.answer()
+    if cb.data.startswith("market:"):
+        market = cb.data.split(":")[1]
+        await state.set(cb.from_user.id, "market", market)
+        keyboard, text = tickers_keyboard(market)
+        await cb.message.edit_text(text, reply_markup=keyboard)
+        await cb.answer()
 
-# Обработка выбора тикера
+# Обработка выбора тикера и кнопки "Назад"
 async def ticker_callback(cb: CallbackQuery):
     if cb.data.startswith("ticker:"):
         symbol = cb.data.split(":")[1]
@@ -44,16 +46,18 @@ async def ticker_callback(cb: CallbackQuery):
             f"✅ Выбран тикер: {symbol}\n\nВыберите таймфрейм:",
             reply_markup=timeframe_keyboard()
         )
-    elif cb.data == "back:markets":
+        await cb.answer()
+    elif cb.data.startswith("back:"):  # Исправлено: проверка на префикс
         await cb.message.edit_text(
             "Выберите рынок для анализа:",
             reply_markup=market_keyboard()
         )
+        await cb.answer()
     elif cb.data == "mode:image":
         await cb.message.edit_text(
             "📸 Пришлите скриншот графика для анализа.\nПосле отправки выберите таймфрейм."
         )
-    await cb.answer()
+        await cb.answer()
 
 # Обработка выбора таймфрейма
 async def tf_callback(cb: CallbackQuery):
@@ -82,7 +86,6 @@ async def tf_callback(cb: CallbackQuery):
         await cb.message.answer(f"❌ {err}\n\nНачните заново:", reply_markup=market_keyboard())
     else:
         await send_result(cb.message, res)
-        # Предлагаем продолжить
         await cb.message.answer("Хотите проанализировать другой тикер?", reply_markup=market_keyboard())
 
     await state.clear(cb.from_user.id)
@@ -90,7 +93,7 @@ async def tf_callback(cb: CallbackQuery):
 
 async def send_result(message: Message, res: dict):
     growth_pct = int(res["prob"] * 100)
-    down_pct = int(res["down_prob"] * 100)  # Новый для падения
+    down_pct = int(res["down_prob"] * 100)
     txt = (
         f"📊 {res.get('symbol', 'График')} | {res['tf']} мин\n"
         f"Вероятность роста на 2–3 свечи: {growth_pct}%\n"
@@ -112,12 +115,12 @@ def main():
     dp.message.register(start, CommandStart())
     dp.message.register(image_handler, F.content_type.in_({ContentType.PHOTO, ContentType.DOCUMENT}))
     
-    # Обработчики
+    # Обработчики callback
     dp.callback_query.register(market_callback, F.data.startswith("market:"))
     dp.callback_query.register(ticker_callback, F.data.startswith("ticker:") | F.data.startswith("back:") | F.data == "mode:image")
     dp.callback_query.register(tf_callback, F.data.startswith("tf:"))
 
-    print("Бот запущен с кнопками!")
+    print("Бот запущен с исправлением кнопки 'Назад'!")
     dp.run_polling(bot)
 
 if __name__ == "__main__":
