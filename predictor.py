@@ -15,15 +15,23 @@ def analyze(image_bytes, tf):
     model = get_model(tf)
     X = build_features(candles, tf)
 
-    # ML сигнал
-    if len(X) >= 4:
+    # ML сигнал с защитой от ошибки
+    ml_prob = 0.5
+    ml_conf = 0.0  # низкая уверенность по умолчанию
+    if len(X) >= 7:  # нужно минимум 4 для обучения + 3 для предсказания
         y = (X[:,1] > 0).astype(int)
-        model.fit(X[:-3], y[:-3])
-        ml_probs = model.predict(X[-3:])[:,1]
-        ml_prob = ml_probs.mean()
-        ml_conf = 1 - abs(ml_prob - 0.5) * 2
-    else:
-        ml_prob, ml_conf = 0.5, 0.0
+        train_y = y[:-3]
+        if len(np.unique(train_y)) >= 2:  # есть оба класса
+            try:
+                model.fit(X[:-3], train_y)
+                ml_probs = model.predict(X[-3:])[:,1]
+                ml_prob = ml_probs.mean()
+                ml_conf = 1 - abs(ml_prob - 0.5) * 2  # уверенность от отклонения от 0.5
+            except ValueError:
+                # На всякий случай (хотя проверка выше должна поймать)
+                ml_prob = 0.5
+                ml_conf = 0.0
+        # else: только один класс — оставляем ml_prob=0.5, ml_conf=0.0
 
     # Паттерны
     patterns, pattern_score = detect_patterns(candles[-8:])
@@ -33,12 +41,12 @@ def analyze(image_bytes, tf):
     # Тренд
     trend_prob, trend_conf = trend_signal(candles)
 
-    # Ансамбль
+    # Ансамбль (ML вес 0, если не обучился)
     weights = [ml_conf, pattern_conf, trend_conf]
     total_weight = sum(weights) + 1e-6
     final_prob = (ml_prob * ml_conf + pattern_prob * pattern_conf + trend_prob * trend_conf) / total_weight
 
-    ensemble_probs = [ml_prob, pattern_prob, trend_prob]
+    ensemble_probs = [ml_prob if ml_conf > 0 else (pattern_prob + trend_prob)/2, pattern_prob, trend_prob]
     conf_label, conf_score = confidence_from_probs(ensemble_probs)
 
     return {
