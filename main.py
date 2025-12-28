@@ -4,7 +4,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
 from aiogram.enums import ContentType
 from config import TELEGRAM_BOT_TOKEN, STATE_TTL_SECONDS
-from keyboards import ticker_keyboard, timeframe_keyboard
+from keyboards import session_keyboard, timeframe_keyboard
 from state import TTLState
 from predictor import analyze
 import re
@@ -12,10 +12,11 @@ import re
 state = TTLState(STATE_TTL_SECONDS)
 
 async def start(m: Message):
+    keyboard, text = session_keyboard()
     await m.answer(
         "🤖 Боттрейд — анализ свечных графиков\n\n"
-        "Выберите, как хотите анализировать рынок:",
-        reply_markup=ticker_keyboard()
+        f"{text}",
+        reply_markup=keyboard
     )
 
 async def image_handler(m: Message):
@@ -29,19 +30,17 @@ async def image_handler(m: Message):
 
 # Обработка выбора тикера
 async def ticker_callback(cb: CallbackQuery):
-    data = cb.data
-    if data.startswith("ticker:"):
-        symbol = data.split(":")[1]
+    if cb.data.startswith("ticker:"):
+        symbol = cb.data.split(":")[1]
         await state.set(cb.from_user.id, "symbol", symbol)
         await state.set(cb.from_user.id, "mode", "api")
         await cb.message.edit_text(
-            f"✅ Выбран тикер: {symbol}\n\nТеперь выберите таймфрейм:",
+            f"✅ Выбран тикер: {symbol}\n\nВыберите таймфрейм:",
             reply_markup=timeframe_keyboard()
         )
-    elif data == "mode:image":
+    elif cb.data == "mode:image":
         await cb.message.edit_text(
-            "📸 Пришлите скриншот графика, и я проанализирую его.\n"
-            "После отправки выберите таймфрейм."
+            "📸 Пришлите скриншот графика для анализа.\nПосле отправки выберите таймфрейм."
         )
     await cb.answer()
 
@@ -69,11 +68,11 @@ async def tf_callback(cb: CallbackQuery):
         err = "Режим не определён. Начните заново с /start"
 
     if err:
-        await cb.message.answer(f"❌ {err}\n\nНачните заново:", reply_markup=ticker_keyboard())
+        await cb.message.answer(f"❌ {err}\n\nНачните заново:", reply_markup=session_keyboard()[0])
     else:
         await send_result(cb.message, res)
         # Предлагаем продолжить
-        await cb.message.answer("Хотите проанализировать другой тикер?", reply_markup=ticker_keyboard())
+        await cb.message.answer("Хотите проанализировать другой тикер?", reply_markup=session_keyboard()[0])
 
     await state.clear(cb.from_user.id)
     await cb.answer()
