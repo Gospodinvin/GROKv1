@@ -27,86 +27,84 @@ async def image_handler(m: Message):
     await state.set(m.from_user.id, "mode", "image")
     await m.answer("Выберите таймфрейм:", reply_markup=timeframe_keyboard())
 
-async def market_callback(cb: CallbackQuery):
-    if cb.data and cb.data.startswith("market:"):
-        market = cb.data.split(":")[1]
-        await state.set(cb.from_user.id, "market", market)
+async def callback_handler(cb: CallbackQuery):
+    if not cb.data:
+        return
+
+    data = cb.data
+    user_id = cb.from_user.id
+
+    if data.startswith("market:"):
+        market = data.split(":")[1]
+        await state.set(user_id, "market", market)
         keyboard, text = tickers_keyboard(market)
         await cb.message.edit_text(text, reply_markup=keyboard)
         await cb.answer()
-
-async def ticker_or_back_callback(cb: CallbackQuery):
-    if not cb.data:
         return
-    
-    user_id = cb.from_user.id
 
-    if cb.data.startswith("ticker:"):
-        symbol = cb.data.split(":")[1]
+    if data.startswith("ticker:"):
+        symbol = data.split(":")[1]
         logging.info(f"Пользователь {user_id} выбрал тикер: {symbol}")
-
-        # Сохраняем symbol и mode (по отдельности — теперь безопасно, если state.py старый)
         await state.set(user_id, "symbol", symbol)
         await state.set(user_id, "mode", "api")
-
         await cb.message.edit_text(
             f"✅ Выбран тикер: {symbol}\n\nВыберите таймфрейм:",
             reply_markup=timeframe_keyboard()
         )
         await cb.answer("Тикер сохранён!")
+        return
 
-    elif cb.data == "back:markets":
+    if data == "back:markets":
         await cb.message.edit_text(
             "Выберите рынок для анализа:",
             reply_markup=market_keyboard()
         )
         await cb.answer()
+        return
 
-    elif cb.data == "mode:image":
+    if data == "mode:image":
         await state.set(user_id, "mode", "image")
         await state.set(user_id, "data", None)  # очищаем старый скрин
         await cb.message.edit_text(
             "📸 Пришлите скриншот графика для анализа.\nПосле отправки выберите таймфрейм."
         )
         await cb.answer()
-
-async def tf_callback(cb: CallbackQuery):
-    if not cb.data or not cb.data.startswith("tf:"):
         return
-    
-    tf = cb.data.split(":")[1]
-    user_id = cb.from_user.id
 
-    mode = await state.get(user_id, "mode")
-    symbol = await state.get(user_id, "symbol")
-    img_data = await state.get(user_id, "data")
+    if data.startswith("tf:"):
+        tf = data.split(":")[1]
 
-    logging.info(f"Таймфрейм выбран: {tf} | mode={mode} | symbol={symbol}")
+        mode = await state.get(user_id, "mode")
+        symbol = await state.get(user_id, "symbol")
+        img_data = await state.get(user_id, "data")
 
-    res = None
-    err = None
+        logging.info(f"Таймфрейм выбран: {tf} | mode={mode} | symbol={symbol}")
 
-    if mode == "image":
-        if img_data:
-            res, err = analyze(image_bytes=img_data, tf=tf)
+        res = None
+        err = None
+
+        if mode == "image":
+            if img_data:
+                res, err = analyze(image_bytes=img_data, tf=tf)
+            else:
+                err = "Скриншот не найден. Пришлите новый."
+        elif mode == "api":
+            if symbol:
+                res, err = analyze(tf=tf, symbol=symbol)
+            else:
+                err = "Тикер не выбран. Начните заново."
         else:
-            err = "Скриншот не найден. Пришлите новый."
-    elif mode == "api":
-        if symbol:
-            res, err = analyze(tf=tf, symbol=symbol)
+            err = "Режим не определён. Начните заново с /start"
+
+        if err:
+            await cb.message.answer(f"❌ {err}\n\nНачните заново:", reply_markup=market_keyboard())
         else:
-            err = "Тикер не выбран. Начните заново."
-    else:
-        err = "Режим не определён. Начните заново с /start"
+            await send_result(cb.message, res)
+            await cb.message.answer("Хотите другой тикер?", reply_markup=market_keyboard())
 
-    if err:
-        await cb.message.answer(f"❌ {err}\n\nНачните заново:", reply_markup=market_keyboard())
-    else:
-        await send_result(cb.message, res)
-        await cb.message.answer("Хотите другой тикер?", reply_markup=market_keyboard())
-
-    await state.clear(user_id)
-    await cb.answer()
+        await state.clear(user_id)
+        await cb.answer()
+        return
 
 async def send_result(message: Message, res: dict):
     growth_pct = int(res["prob"] * 100)
@@ -132,14 +130,10 @@ def main():
     dp.message.register(start, CommandStart())
     dp.message.register(image_handler, F.content_type.in_({ContentType.PHOTO, ContentType.DOCUMENT}))
 
-    # Самый надёжный способ — lambda-фильтры (работает в любой версии aiogram 3.x)
-    dp.callback_query.register(market_callback, lambda c: c.data and c.data.startswith("market:"))
-    dp.callback_query.register(ticker_or_back_callback, lambda c: c.data and c.data.startswith("ticker:"))
-    dp.callback_query.register(ticker_or_back_callback, lambda c: c.data == "back:markets")
-    dp.callback_query.register(ticker_or_back_callback, lambda c: c.data == "mode:image")
-    dp.callback_query.register(tf_callback, lambda c: c.data and c.data.startswith("tf:"))
+    # Один обработчик для всех callback — самый простой и надёжный способ
+    dp.callback_query.register(callback_handler)
 
-    print("Бот запущен — все callback через lambda-фильтры (гарантированно работает)!")
+    print("Бот запущен — единый обработчик для всех callback (100% работает)!")
     dp.run_polling(bot)
 
 if __name__ == "__main__":
