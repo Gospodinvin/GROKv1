@@ -72,11 +72,15 @@ def analyze(image_bytes=None, tf=None, symbol=None):
     total_weight = sum(weights) + 1e-6
     final_prob = (ml_prob * ml_conf + pattern_prob * pattern_conf + trend_prob * trend_conf) / total_weight
 
+    # Добавляем вероятность падения
+    down_prob = 1.0 - final_prob
+
     ensemble_probs = [ml_prob if ml_conf > 0 else (pattern_prob + trend_prob)/2, pattern_prob, trend_prob]
     conf_label, conf_score = confidence_from_probs(ensemble_probs)
 
     return {
         "prob": round(final_prob, 3),
+        "down_prob": round(down_prob, 3),
         "confidence": conf_label,
         "confidence_score": conf_score,
         "quality": quality,
