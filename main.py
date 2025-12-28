@@ -29,11 +29,16 @@ async def image_handler(m: Message):
 
 async def callback_handler(cb: CallbackQuery):
     if not cb.data:
+        await cb.answer()
         return
 
     data = cb.data
     user_id = cb.from_user.id
 
+    # КЛЮЧЕВОЙ ЛОГ — покажет, доходит ли callback вообще!
+    logging.info(f"Получен callback: '{data}' от пользователя {user_id}")
+
+    # Выбор рынка
     if data.startswith("market:"):
         market = data.split(":")[1]
         await state.set(user_id, "market", market)
@@ -42,6 +47,7 @@ async def callback_handler(cb: CallbackQuery):
         await cb.answer()
         return
 
+    # Выбор тикера
     if data.startswith("ticker:"):
         symbol = data.split(":")[1]
         logging.info(f"Пользователь {user_id} выбрал тикер: {symbol}")
@@ -54,6 +60,7 @@ async def callback_handler(cb: CallbackQuery):
         await cb.answer("Тикер сохранён!")
         return
 
+    # Назад к рынкам
     if data == "back:markets":
         await cb.message.edit_text(
             "Выберите рынок для анализа:",
@@ -62,23 +69,25 @@ async def callback_handler(cb: CallbackQuery):
         await cb.answer()
         return
 
+    # Режим скриншота
     if data == "mode:image":
         await state.set(user_id, "mode", "image")
-        await state.set(user_id, "data", None)  # очищаем старый скрин
         await cb.message.edit_text(
             "📸 Пришлите скриншот графика для анализа.\nПосле отправки выберите таймфрейм."
         )
         await cb.answer()
         return
 
+    # ВЫБОР ТАЙМФРЕЙМА — главное место
     if data.startswith("tf:"):
         tf = data.split(":")[1]
+        logging.info(f"Пользователь {user_id} выбрал таймфрейм: {tf}")
 
         mode = await state.get(user_id, "mode")
         symbol = await state.get(user_id, "symbol")
         img_data = await state.get(user_id, "data")
 
-        logging.info(f"Таймфрейм выбран: {tf} | mode={mode} | symbol={symbol}")
+        logging.info(f"Анализ: mode={mode}, symbol={symbol}, tf={tf}")
 
         res = None
         err = None
@@ -94,17 +103,20 @@ async def callback_handler(cb: CallbackQuery):
             else:
                 err = "Тикер не выбран. Начните заново."
         else:
-            err = "Режим не определён. Начните заново с /start"
+            err = "Неизвестный режим. Начните с /start."
 
         if err:
             await cb.message.answer(f"❌ {err}\n\nНачните заново:", reply_markup=market_keyboard())
         else:
             await send_result(cb.message, res)
-            await cb.message.answer("Хотите другой тикер?", reply_markup=market_keyboard())
+            await cb.message.answer("Готов анализировать другой график?", reply_markup=market_keyboard())
 
         await state.clear(user_id)
-        await cb.answer()
+        await cb.answer("Анализ завершён!")
         return
+
+    # Если ничего не подошло
+    await cb.answer("Неизвестная команда")
 
 async def send_result(message: Message, res: dict):
     growth_pct = int(res["prob"] * 100)
@@ -130,10 +142,10 @@ def main():
     dp.message.register(start, CommandStart())
     dp.message.register(image_handler, F.content_type.in_({ContentType.PHOTO, ContentType.DOCUMENT}))
 
-    # Один обработчик для всех callback — самый простой и надёжный способ
+    # Один обработчик — всё ловит
     dp.callback_query.register(callback_handler)
 
-    print("Бот запущен — единый обработчик для всех callback (100% работает)!")
+    print("Бот запущен — финальная версия с полными логами!")
     dp.run_polling(bot)
 
 if __name__ == "__main__":
