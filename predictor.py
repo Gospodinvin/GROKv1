@@ -10,15 +10,12 @@ def analyze(image_bytes, tf):
     candles, quality = extract_candles(image_bytes)
 
     if len(candles) < 12:
-        return None, f"Обнаружено только {len(candles)} свечей (нужно минимум 12). Попробуйте показать больше истории на графике."
-
-    # Новый подход: качество всегда приемлемое, если свечей достаточно
-    # quality теперь информативный, но не блокирующий
+        return None, f"Обнаружено только {len(candles)} свечей (нужно минимум 12).\nСовет: увеличьте масштаб или покажите больше истории на графике (прокрутите влево)."
 
     model = get_model(tf)
     X = build_features(candles, tf)
 
-    # ML signal
+    # ML сигнал
     if len(X) >= 4:
         y = (X[:,1] > 0).astype(int)
         model.fit(X[:-3], y[:-3])
@@ -28,15 +25,15 @@ def analyze(image_bytes, tf):
     else:
         ml_prob, ml_conf = 0.5, 0.0
 
-    # Pattern signal
+    # Паттерны
     patterns, pattern_score = detect_patterns(candles[-8:])
     pattern_prob = 0.5 + pattern_score * 0.4
     pattern_conf = pattern_score
 
-    # Trend signal
+    # Тренд
     trend_prob, trend_conf = trend_signal(candles)
 
-    # Ensemble
+    # Ансамбль
     weights = [ml_conf, pattern_conf, trend_conf]
     total_weight = sum(weights) + 1e-6
     final_prob = (ml_prob * ml_conf + pattern_prob * pattern_conf + trend_prob * trend_conf) / total_weight
