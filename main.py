@@ -4,7 +4,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
 from aiogram.enums import ContentType
 from config import TELEGRAM_BOT_TOKEN, STATE_TTL_SECONDS
-from keyboards import session_keyboard, timeframe_keyboard
+from keyboards import market_keyboard, tickers_keyboard, timeframe_keyboard
 from state import TTLState
 from predictor import analyze
 import re
@@ -12,11 +12,10 @@ import re
 state = TTLState(STATE_TTL_SECONDS)
 
 async def start(m: Message):
-    keyboard, text = session_keyboard()
     await m.answer(
         "🤖 Боттрейд — анализ свечных графиков\n\n"
-        f"{text}",
-        reply_markup=keyboard
+        "Выберите рынок для анализа:",
+        reply_markup=market_keyboard()
     )
 
 async def image_handler(m: Message):
@@ -28,6 +27,13 @@ async def image_handler(m: Message):
     await state.set(m.from_user.id, "mode", "image")
     await m.answer("Выберите таймфрейм:", reply_markup=timeframe_keyboard())
 
+async def market_callback(cb: CallbackQuery):
+    market = cb.data.split(":")[1]
+    await state.set(cb.from_user.id, "market", market)
+    keyboard, text = tickers_keyboard(market)
+    await cb.message.edit_text(text, reply_markup=keyboard)
+    await cb.answer()
+
 # Обработка выбора тикера
 async def ticker_callback(cb: CallbackQuery):
     if cb.data.startswith("ticker:"):
@@ -37,6 +43,11 @@ async def ticker_callback(cb: CallbackQuery):
         await cb.message.edit_text(
             f"✅ Выбран тикер: {symbol}\n\nВыберите таймфрейм:",
             reply_markup=timeframe_keyboard()
+        )
+    elif cb.data == "back:markets":
+        await cb.message.edit_text(
+            "Выберите рынок для анализа:",
+            reply_markup=market_keyboard()
         )
     elif cb.data == "mode:image":
         await cb.message.edit_text(
@@ -68,20 +79,22 @@ async def tf_callback(cb: CallbackQuery):
         err = "Режим не определён. Начните заново с /start"
 
     if err:
-        await cb.message.answer(f"❌ {err}\n\nНачните заново:", reply_markup=session_keyboard()[0])
+        await cb.message.answer(f"❌ {err}\n\nНачните заново:", reply_markup=market_keyboard())
     else:
         await send_result(cb.message, res)
         # Предлагаем продолжить
-        await cb.message.answer("Хотите проанализировать другой тикер?", reply_markup=session_keyboard()[0])
+        await cb.message.answer("Хотите проанализировать другой тикер?", reply_markup=market_keyboard())
 
     await state.clear(cb.from_user.id)
     await cb.answer()
 
 async def send_result(message: Message, res: dict):
     growth_pct = int(res["prob"] * 100)
+    down_pct = int(res["down_prob"] * 100)  # Новый для падения
     txt = (
         f"📊 {res.get('symbol', 'График')} | {res['tf']} мин\n"
         f"Вероятность роста на 2–3 свечи: {growth_pct}%\n"
+        f"Вероятность падения: {down_pct}%\n"
         f"Уверенность: {res['confidence']} ({res['confidence_score']})\n"
         f"Источник: {res['source']}\n"
     )
@@ -99,8 +112,9 @@ def main():
     dp.message.register(start, CommandStart())
     dp.message.register(image_handler, F.content_type.in_({ContentType.PHOTO, ContentType.DOCUMENT}))
     
-    # Новые обработчики
-    dp.callback_query.register(ticker_callback, F.data.startswith("ticker:") | F.data == "mode:image")
+    # Обработчики
+    dp.callback_query.register(market_callback, F.data.startswith("market:"))
+    dp.callback_query.register(ticker_callback, F.data.startswith("ticker:") | F.data.startswith("back:") | F.data == "mode:image")
     dp.callback_query.register(tf_callback, F.data.startswith("tf:"))
 
     print("Бот запущен с кнопками!")
