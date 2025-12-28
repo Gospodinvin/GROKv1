@@ -5,12 +5,13 @@ from trend import trend_signal
 from confidence import confidence_from_probs
 from model_registry import get_model
 from twelve_data import get_client
+from binance_data import get_candles as binance_get_candles  # Новый импорт
 import numpy as np
 
 def analyze(image_bytes=None, tf=None, symbol=None):
     """
     Универсальная функция анализа:
-    - Если symbol указан — используем Twelve Data API
+    - Если symbol указан — используем Twelve Data API (для forex/metals/stocks) или Binance (для crypto)
     - Если image_bytes — используем CV из скриншота
     """
     candles = None
@@ -19,18 +20,29 @@ def analyze(image_bytes=None, tf=None, symbol=None):
 
     # Режим API
     if symbol:
-        client = get_client()
-        if not client:
-            return None, "Twelve Data API не настроен (ключ не найден). Используйте скриншот."
+        # Определяем рынок по символу (простая проверка: если содержит USD и не XAU/XAG — крипта)
+        is_crypto = any(coin in symbol.upper() for coin in ["BTC", "ETH", "BNB", "SOL", "XRP", "ADA", "DOGE", "AVAX", "DOT", "LTC"])
         
-        try:
-            candles = client.get_candles(symbol.upper(), f"{tf}min", 60)
-        except Exception as e:
-            return None, f"Ошибка API: {str(e)}. Попробуйте позже или используйте скриншот."
-        
-        if not candles or len(candles) < 12:
-            return None, f"Данные для {symbol} ({tf}m) недоступны или недостаточно свечей ({len(candles) if candles else 0}). Проверьте тикер или подключение."
-        source = "Twelve Data API"
+        if is_crypto:
+            # Используем Binance для крипты
+            candles = binance_get_candles(symbol.upper(), tf, 60)
+            if not candles:
+                return None, f"Ошибка Binance API для {symbol} ({tf}m). Попробуйте скриншот."
+            source = "Binance API"
+        else:
+            # Twelve Data для forex, metals, stocks
+            client = get_client()
+            if not client:
+                return None, "Twelve Data API не настроен (ключ не найден). Используйте скриншот."
+            
+            try:
+                candles = client.get_candles(symbol.upper(), f"{tf}min", 60)
+            except Exception as e:
+                return None, f"Ошибка Twelve Data API: {str(e)}. Попробуйте позже или используйте скриншот."
+            
+            if not candles or len(candles) < 12:
+                return None, f"Данные для {symbol} ({tf}m) недоступны или недостаточно свечей ({len(candles) if candles else 0}). Проверьте тикер или подключение."
+            source = "Twelve Data API"
 
     # Режим скриншота
     elif image_bytes:
@@ -41,7 +53,7 @@ def analyze(image_bytes=None, tf=None, symbol=None):
     else:
         return None, "Нет данных: укажите скриншот или тикер."
 
-    # Основной анализ
+    # Основной анализ (без изменений)
     model = get_model(tf)
     X = build_features(candles, tf)
 
