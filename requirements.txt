@@ -2,3 +2,4 @@ aiogram>=3.4.1
 opencv-python-headless
 numpy
 scikit-learn
+requests  # Для Twelve Data API
